@@ -1,13 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"time"
 
-	appErr "github.com/jaztec/go-experiment-chat/error"
+	"github.com/jaztec/go-experiment-chat/errors"
 	"github.com/jaztec/go-experiment-chat/network"
 )
 
@@ -23,31 +24,33 @@ func startStampMicros() int64 {
 
 func initializeServer() (network.ServerInterface, chan network.Message, error) {
 	s := network.NewServer(network.ServerConfig{Port: 12356, MessageBufferSize: 1024})
-	c, err := s.Listen()
-	if appErr.HasError(err) {
+	msgs, err := s.Listen()
+	if errors.HasError(err) {
 		return s, nil, err
 	}
 	// Listen to messages
 	go func() {
 		for {
 			select {
-			case msg := <-c:
-				fmt.Println(msg)
+			case msg := <-msgs:
+				s.Broadcast(msg)
 			}
 		}
 	}()
-	return s, c, nil
+	return s, msgs, nil
 }
 
 func initializeClient() (network.ClientInterface, chan network.Message, error) {
-	c, err := network.NewClient()
-	if appErr.HasError(err) {
+	c, err := network.NewClient("tcp", "localhost:12356")
+	if errors.HasError(err) {
 		return c, nil, err
 	}
 	conn, err := c.Dial()
-	if appErr.HasError(err) {
-		return c, conn, err
+	if errors.HasError(err) {
+		c.Close()
+		return nil, nil, err
 	}
+
 	return c, conn, nil
 }
 
@@ -71,17 +74,26 @@ func main() {
 	if *mode == "server" {
 		s, _, err := initializeServer()
 		defer s.Close()
-		if appErr.HasError(err) {
+		if errors.HasError(err) {
 			fmt.Printf("\nServer not able to initialize: %v\n", err)
 			os.Exit(2)
 		}
 	} else if *mode == "client" {
 		c, _, err := initializeClient()
 		defer c.Close()
-		if appErr.HasError(err) {
+		if errors.HasError(err) {
 			fmt.Printf("\nClient not able to initialize: %v\n", err)
 			os.Exit(2)
 		}
+		// Capture input
+		go func() {
+			reader := bufio.NewReader(os.Stdin)
+			for {
+				fmt.Print("Enter text: ")
+				text, _ := reader.ReadString('\n')
+				c.Send(c.CreateMessage([]byte(text)))
+			}
+		}()
 	} else {
 		fmt.Printf("\nNo valid mode provided: %s\n", *mode)
 		os.Exit(2)
@@ -94,4 +106,6 @@ func main() {
 	<-sigc
 
 	printMicros(start)
+
+	os.Exit(0)
 }

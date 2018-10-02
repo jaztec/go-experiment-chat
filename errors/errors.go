@@ -1,6 +1,7 @@
-package error
+package errors
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -13,4 +14,9 @@ func HasError(err error) bool {
 		return true
 	}
 	return false
+}
+
+// New error relayed to official errors package
+func New(text string) error {
+	return errors.New(text)
 }

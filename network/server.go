@@ -1,14 +1,11 @@
 package network
 
 import (
-	"bufio"
 	"fmt"
-	"math/rand"
 	"net"
 	"strconv"
-	"time"
 
-	appErr "github.com/jaztec/go-experiment-chat/error"
+	"github.com/jaztec/go-experiment-chat/errors"
 )
 
 // ServerConfig containing settings for the server
@@ -20,107 +17,94 @@ type ServerConfig struct {
 // ServerClass server object
 type ServerClass struct {
 	messageBufferSize int16
-	channel           chan Message
-	conns             map[string]*net.Conn
+	conns             map[string]*Connection
 	messages          []byte
 	port              int16
 	server            net.Listener
+	close             chan bool
+	reads             chan Message
 }
 
 // ServerInterface defined in the server object
 type ServerInterface interface {
 	Listen() (chan Message, error)
-	Close() bool
+	Close() error
+	Send(string, Message) error
+	Broadcast(Message)
 }
 
 // Listen to TCP connections
-func (c *ServerClass) Listen() (chan Message, error) {
+func (s *ServerClass) Listen() (chan Message, error) {
 	var err error
 	// Listen on all interfaces to port
-	c.server, err = net.Listen("tcp", ":"+strconv.FormatInt(int64(c.port), 10))
-	if appErr.HasError(err) {
+	s.server, err = net.Listen("tcp", ":"+strconv.FormatInt(int64(s.port), 10))
+	if errors.HasError(err) {
 		return nil, err
 	}
-	c.channel = make(chan Message, c.messageBufferSize)
-	go c.run(c.channel)
-	fmt.Printf("Listening to port %d\n", c.port)
-	return c.channel, nil
+	s.reads = make(chan Message, s.messageBufferSize)
+	go s.run()
+	fmt.Printf("Listening to port %d\n", s.port)
+	return s.reads, nil
 }
 
 // Close the server
-func (c ServerClass) Close() bool {
+func (s ServerClass) Close() error {
 	fmt.Println("Close the server")
-	defer c.server.Close()
-	return true
+	s.close <- true
+	err := s.server.Close()
+	for id := range s.conns {
+		s.conns[id].CloseConnection <- byte(1)
+	}
+	return err
 }
 
-func (c *ServerClass) run(messages chan Message) {
-	for {
-		conn, err := c.server.Accept()
-		if appErr.HasError(err) {
-			continue
-		}
-		go c.handleConnection(conn, messages)
+// Send message to a client
+func (s ServerClass) Send(id string, message Message) error {
+	conn := s.conns[id]
+	if conn == nil {
+		return errors.New(id + ": ID not found")
+	}
+	conn.Writes <- message
+	return nil
+}
+
+// Broadcast message to all clients
+func (s ServerClass) Broadcast(message Message) {
+	for id := range s.conns {
+		s.conns[id].Writes <- message
 	}
 }
 
-func (c *ServerClass) handleConnection(conn net.Conn, messages chan Message) {
-	id := randString(32)
-	c.conns[id] = &conn
-	defer func() {
-		conn.Close()
-		delete(c.conns, id)
-	}()
-	reader := bufio.NewReader(conn)
-
+func (s *ServerClass) run() {
 	for {
-		// conn.SetReadDeadline(time.Now().Add(time.Second * 5))
-
-		buff, err := reader.ReadBytes('\n')
-		if appErr.HasError(err) {
-			break
+		conn, err := s.server.Accept()
+		if errors.HasError(err) {
+			continue
 		}
 
-		messages <- Message{id: id, raw: buff}
+		connection, err := NewConnection(&conn)
+		if errors.HasError(err) {
+			continue
+		}
 
-		time.Sleep(time.Millisecond)
+		s.conns[connection.ID] = connection
+
+		go func() {
+			for {
+				select {
+				case msg := <-connection.Reads:
+					s.reads <- msg
+				}
+			}
+		}()
 	}
 }
 
 // NewServer network.ServerInterface instance pointer
 func NewServer(config ServerConfig) ServerInterface {
-	c := new(ServerClass)
-	c.messageBufferSize = config.MessageBufferSize
-	c.port = config.Port
-	c.conns = make(map[string]*net.Conn)
-	return c
-}
-
-// COPIED CODE
-
-var src = rand.NewSource(time.Now().UnixNano())
-
-const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-const (
-	letterIdxBits = 6                    // 6 bits to represent a letter index
-	letterIdxMask = 1<<letterIdxBits - 1 // All 1-bits, as many as letterIdxBits
-	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
-)
-
-func randString(n int) string {
-	b := make([]byte, n)
-	// A src.Int63() generates 63 random bits, enough for letterIdxMax characters!
-	for i, cache, remain := n-1, src.Int63(), letterIdxMax; i >= 0; {
-		if remain == 0 {
-			cache, remain = src.Int63(), letterIdxMax
-		}
-		if idx := int(cache & letterIdxMask); idx < len(letterBytes) {
-			b[i] = letterBytes[idx]
-			i--
-		}
-		cache >>= letterIdxBits
-		remain--
-	}
-
-	return string(b)
+	s := &ServerClass{
+		messageBufferSize: config.MessageBufferSize,
+		port:              config.Port,
+		conns:             make(map[string]*Connection)}
+	return s
 }
