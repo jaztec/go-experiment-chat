@@ -1,9 +1,8 @@
 package network
 
 import (
+	"fmt"
 	"net"
-
-	"github.com/jaztec/go-experiment-chat/errors"
 )
 
 // ClientConfig containing settings for the client
@@ -14,7 +13,7 @@ type ClientConfig struct {
 type ClientClass struct {
 	network string
 	address string
-	conn    Connection
+	conn    *Connection
 }
 
 // ClientInterface defining client functions
@@ -28,14 +27,16 @@ type ClientInterface interface {
 // Dial in with the server
 func (c *ClientClass) Dial() (chan Message, error) {
 	conn, err := net.Dial(c.network, c.address)
-	if errors.HasError(err) {
+	if err != nil {
 		return nil, err
 	}
 
+	print("Create new connection from client")
 	connection, err := NewConnection(&conn)
-	if errors.HasError(err) {
+	if err != nil {
 		return nil, err
 	}
+	c.conn = connection
 
 	return connection.Reads, nil
 }
@@ -47,6 +48,7 @@ func (c ClientClass) Close() {
 
 // Send a message to the server
 func (c ClientClass) Send(message Message) {
+	print(fmt.Sprintf("%v\n", message))
 	c.conn.Writes <- message
 }
 
@@ -62,9 +64,5 @@ func NewClient(network string, address string) (ClientInterface, error) {
 	c := &ClientClass{
 		network: network,
 		address: address}
-	_, err := c.Dial()
-	if errors.HasError(err) {
-		return nil, err
-	}
 	return c, nil
 }

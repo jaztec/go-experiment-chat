@@ -8,9 +8,14 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/jaztec/go-experiment-chat/errors"
 	"github.com/jaztec/go-experiment-chat/network"
 )
+
+var debug bool
+
+func init() {
+	debug = true
+}
 
 func printMicros(since int64) {
 	fmt.Print("\nRuntime ")
@@ -25,7 +30,7 @@ func startStampMicros() int64 {
 func initializeServer() (network.ServerInterface, chan network.Message, error) {
 	s := network.NewServer(network.ServerConfig{Port: 12356, MessageBufferSize: 1024})
 	msgs, err := s.Listen()
-	if errors.HasError(err) {
+	if err != nil {
 		return s, nil, err
 	}
 	// Listen to messages
@@ -42,11 +47,11 @@ func initializeServer() (network.ServerInterface, chan network.Message, error) {
 
 func initializeClient() (network.ClientInterface, chan network.Message, error) {
 	c, err := network.NewClient("tcp", "localhost:12356")
-	if errors.HasError(err) {
-		return c, nil, err
+	if err != nil {
+		return nil, nil, err
 	}
 	conn, err := c.Dial()
-	if errors.HasError(err) {
+	if err != nil {
 		c.Close()
 		return nil, nil, err
 	}
@@ -56,6 +61,12 @@ func initializeClient() (network.ClientInterface, chan network.Message, error) {
 
 func usage() {
 	flag.PrintDefaults()
+}
+
+func print(message string) {
+	if debug {
+		fmt.Print(message)
+	}
 }
 
 func main() {
@@ -74,14 +85,14 @@ func main() {
 	if *mode == "server" {
 		s, _, err := initializeServer()
 		defer s.Close()
-		if errors.HasError(err) {
+		if err != nil {
 			fmt.Printf("\nServer not able to initialize: %v\n", err)
 			os.Exit(2)
 		}
 	} else if *mode == "client" {
 		c, _, err := initializeClient()
 		defer c.Close()
-		if errors.HasError(err) {
+		if err != nil {
 			fmt.Printf("\nClient not able to initialize: %v\n", err)
 			os.Exit(2)
 		}

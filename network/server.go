@@ -1,12 +1,18 @@
 package network
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
-
-	"github.com/jaztec/go-experiment-chat/errors"
 )
+
+var debug bool
+
+func init() {
+	// Make sure to include some better env variable integration
+	debug = true
+}
 
 // ServerConfig containing settings for the server
 type ServerConfig struct {
@@ -38,7 +44,7 @@ func (s *ServerClass) Listen() (chan Message, error) {
 	var err error
 	// Listen on all interfaces to port
 	s.server, err = net.Listen("tcp", ":"+strconv.FormatInt(int64(s.port), 10))
-	if errors.HasError(err) {
+	if err != nil {
 		return nil, err
 	}
 	s.reads = make(chan Message, s.messageBufferSize)
@@ -78,15 +84,17 @@ func (s ServerClass) Broadcast(message Message) {
 func (s *ServerClass) run() {
 	for {
 		conn, err := s.server.Accept()
-		if errors.HasError(err) {
+		if err != nil {
 			continue
 		}
 
+		print("Create new connection from server")
 		connection, err := NewConnection(&conn)
-		if errors.HasError(err) {
+		if err != nil {
 			continue
 		}
 
+		print(fmt.Sprintf("\nNew connection: %s\n", connection.ID))
 		s.conns[connection.ID] = connection
 
 		go func() {
@@ -107,4 +115,10 @@ func NewServer(config ServerConfig) ServerInterface {
 		port:              config.Port,
 		conns:             make(map[string]*Connection)}
 	return s
+}
+
+func print(message string) {
+	if debug {
+		fmt.Print(message)
+	}
 }
