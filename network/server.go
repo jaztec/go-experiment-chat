@@ -36,7 +36,7 @@ type ServerInterface interface {
 	Listen() (chan Message, error)
 	Close() error
 	Send(string, Message) error
-	Broadcast(Message)
+	Broadcast(Message) error
 }
 
 // Listen to TCP connections
@@ -55,9 +55,12 @@ func (s *ServerClass) Listen() (chan Message, error) {
 
 // Close the server
 func (s ServerClass) Close() error {
+	var err error
 	fmt.Println("Close the server")
 	s.close <- true
-	err := s.server.Close()
+	if s.server != nil {
+		err = s.server.Close()
+	}
 	for id := range s.conns {
 		s.conns[id].CloseConnection <- byte(1)
 	}
@@ -75,10 +78,14 @@ func (s ServerClass) Send(id string, message Message) error {
 }
 
 // Broadcast message to all clients
-func (s ServerClass) Broadcast(message Message) {
+func (s ServerClass) Broadcast(message Message) error {
+	if s.conns == nil {
+		return errors.New("Server.conns not initalized")
+	}
 	for id := range s.conns {
 		s.conns[id].Writes <- message
 	}
+	return nil
 }
 
 func (s *ServerClass) run() {
@@ -88,12 +95,13 @@ func (s *ServerClass) run() {
 			continue
 		}
 
-		print("Create new connection from server")
 		connection, err := NewConnection(&conn)
 		if err != nil {
+			fmt.Printf("Error creating new connection %v\n", err)
 			continue
 		}
 
+		print("Create new connection from server")
 		print(fmt.Sprintf("\nNew connection: %s\n", connection.ID))
 		s.conns[connection.ID] = connection
 
@@ -102,6 +110,8 @@ func (s *ServerClass) run() {
 				select {
 				case msg := <-connection.Reads:
 					s.reads <- msg
+				default:
+					SleepMS(1)
 				}
 			}
 		}()
@@ -113,7 +123,9 @@ func NewServer(config ServerConfig) ServerInterface {
 	s := &ServerClass{
 		messageBufferSize: config.MessageBufferSize,
 		port:              config.Port,
-		conns:             make(map[string]*Connection)}
+		conns:             make(map[string]*Connection),
+		close:             make(chan bool, 1)}
+
 	return s
 }
 

@@ -32,3 +32,8 @@ func RandString(n int) string {
 
 	return string(b)
 }
+
+// SleepMS sleeps for n milliseconds
+func SleepMS(n int16) {
+	time.Sleep(time.Millisecond * time.Duration(n))
+}

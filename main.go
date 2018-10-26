@@ -17,10 +17,12 @@ func init() {
 	debug = true
 }
 
-func printMicros(since int64) {
+func printMicros(since int64) int64 {
+	r := time.Now().UnixNano() / int64(time.Microsecond)
 	fmt.Print("\nRuntime ")
-	fmt.Print(time.Now().UnixNano()/int64(time.Microsecond) - since)
+	fmt.Print(r - since)
 	fmt.Print(" micros\n")
+	return r
 }
 
 func startStampMicros() int64 {
@@ -38,7 +40,13 @@ func initializeServer() (network.ServerInterface, chan network.Message, error) {
 		for {
 			select {
 			case msg := <-msgs:
-				s.Broadcast(msg)
+				err := s.Broadcast(msg)
+				if err != nil {
+					fmt.Printf("Error occured: %v\n", err)
+					break
+				}
+			default:
+				time.Sleep(time.Millisecond)
 			}
 		}
 	}()
@@ -50,13 +58,23 @@ func initializeClient() (network.ClientInterface, chan network.Message, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	conn, err := c.Dial()
+	msgs, err := c.Dial()
 	if err != nil {
 		c.Close()
 		return nil, nil, err
 	}
-
-	return c, conn, nil
+	// Listen to messages
+	go func() {
+		for {
+			select {
+			case msg := <-msgs:
+				fmt.Printf("\nReceived: %s\nEnter text: ", msg.Raw)
+			default:
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}()
+	return c, msgs, nil
 }
 
 func usage() {

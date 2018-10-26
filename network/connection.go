@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"time"
 )
 
 // Connection to a client with a reference to a write channel
@@ -31,11 +30,10 @@ func (c Connection) watchReads() {
 	for {
 		buf, err := c.reader.ReadBytes('\n')
 		if err != nil {
-			time.Sleep(time.Millisecond)
-			continue
+			fmt.Printf("Error occured: %v", err)
+			SleepMS(1)
+			break
 		}
-
-		print(fmt.Sprintf("%s Received %s\n", c.ID, string(buf)))
 
 		c.Reads <- Message{ID: c.ID, Raw: buf, Type: IncomingMessage}
 	}
@@ -58,7 +56,7 @@ func (c Connection) watchWrites() {
 				continue
 			}
 		default:
-			time.Sleep(time.Millisecond)
+			SleepMS(1)
 		}
 	}
 }
@@ -71,8 +69,8 @@ func NewConnection(conn *net.Conn) (*Connection, error) {
 		ID:              string(id),
 		conn:            conn,
 		CloseConnection: make(chan byte),
-		Writes:          make(chan Message),
-		Reads:           make(chan Message),
+		Writes:          make(chan Message, 5),
+		Reads:           make(chan Message, 5),
 		reader:          bufio.NewReader(*conn),
 		writer:          bufio.NewWriter(*conn)}
 

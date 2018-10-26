@@ -1,7 +1,6 @@
 package network
 
 import (
-	"fmt"
 	"net"
 )
 
@@ -43,12 +42,13 @@ func (c *ClientClass) Dial() (chan Message, error) {
 
 // Close the connection to the server
 func (c ClientClass) Close() {
-	c.conn.CloseConnection <- byte(1)
+	if c.conn != nil {
+		c.conn.CloseConnection <- byte(1)
+	}
 }
 
 // Send a message to the server
 func (c ClientClass) Send(message Message) {
-	print(fmt.Sprintf("%v\n", message))
 	c.conn.Writes <- message
 }
 
